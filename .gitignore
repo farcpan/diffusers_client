@@ -1,0 +1,7 @@
+.venv
+cache
+__pycache__
+*.png
+*.jpeg
+memo.md
+.env
