@@ -23,8 +23,7 @@ class DiffusersClient:
             torch_dtype=torch.float16,
             variant="fp16",
             cache_dir=self.cache_dir,
-            local_files_only=True,
-            load_safety_checker=False
+            local_files_only=True
         ).to(self.device)
 
         # compile
