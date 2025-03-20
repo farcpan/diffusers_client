@@ -15,6 +15,7 @@ class DiffusersClient:
         print("Loading Pipeline...")
         print("="*30)
         start = time.time()
+        
         self.model_file_path = model_file_path
         self.device = device
         self.cache_dir = cache_dir
@@ -23,8 +24,14 @@ class DiffusersClient:
             torch_dtype=torch.float16,
             variant="fp16",
             cache_dir=self.cache_dir,
-            local_files_only=True
-        ).to(self.device)
+            local_files_only=True,
+        )
+
+        torch.cuda.empty_cache()    # clear GPU memory
+        with torch.no_grad():
+            self.pipe.to("cuda")
+
+        torch.cuda.synchronize()  # await 
 
         # compile
         # ref: https://torch.classcat.com/2023/11/03/huggingface-blog-simple-sdxl-optimizations/
@@ -32,7 +39,7 @@ class DiffusersClient:
 
         self.pipe.scheduler = DPMSolverMultistepScheduler.from_config(self.pipe.scheduler.config)
         self.pipe.enable_xformers_memory_efficient_attention()
-        self.pipe.enable_model_cpu_offload()
+        #self.pipe.enable_model_cpu_offload()
         #self.pipe.enable_sequential_cpu_offload()
         self.pipe.scheduler.use_karras_sigmas = False  # Karras
 
@@ -51,12 +58,18 @@ class DiffusersClient:
     def generate(self, prompt, ng_prompt, width, height, steps=25, scale=5, seed=1, clip_skip=2, lora_info=None):
         # unloading
         if lora_info is None and self.lora_info != None:
-            self.pipe.unload_lora_weights
+            self.pipe.unload_lora_weights()
 
-        if not lora_info is None:
+        if not lora_info is None and self.lora_info != lora_info:
             self.lora_info = lora_info
-            self.pipe.load_lora_weights(".", lora_info["path"], adapter_name="adapter")
-            self.pipe.set_adapters(["adapter"], adapter_weights=[lora_info["weights"]])
+
+            # adapter name definition
+            basename = os.path.basename(lora_info.path).split(".")[0]
+            weight_str = f"{lora_info.weights}".replace(".", "")
+            adapter_name = f"{basename}|{weight_str}"
+
+            self.pipe.load_lora_weights(".", weight_name=lora_info.path, adapter_name=adapter_name)
+            self.pipe.set_adapters([adapter_name], adapter_weights=[lora_info.weights])
 
         compel = Compel(
             tokenizer=[self.pipe.tokenizer, self.pipe.tokenizer_2],
